@@ -7,25 +7,52 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def get_events_from_duke_api(feed_type="json", future_days=45, groups=['All'], categories=['All'], filter_method_group=True, filter_method_category=True):
+def get_events_from_duke_api(feed_type: str = "json",
+                             future_days: int = 45,
+                             groups: list = ['All'],
+                             categories: list = ['All'],
+                             filter_method_group: bool = True,
+                             filter_method_category: bool = True) -> str:
     """
     Fetch events from Duke University's public calendar API with optional filters.
+
+    Parameters:
+        feed_type (str): Format of the returned data. Acceptable values include:
+                         'rss', 'js', 'ics', 'csv', 'json', 'jsonp'. Defaults to 'json'.
+        future_days (int): Number of days into the future for which to fetch events.
+                           Defaults to 45.
+        groups (list):  The organizer or host groups of the events or the related groups in events. For example,
+                        '+DataScience (+DS)' refers to events hosted by the DataScience program.
+                        Use 'All' to include events from all groups. 
+        categories (list): 
+                        The thematic or topical category of the events. For example,
+                        'Academic Calendar Dates', 'Alumni/Reunion', or 'Artificial Intelligence'.
+                         Use 'All' to include events from all categories.
+        filter_method_group (bool): 
+            - False: Event must match ALL specified groups (AND).
+            - True: Event may match ANY of the specified groups (OR).
+        filter_method_category (bool): 
+            - False: Event must match ALL specified categories (AND).
+            - True: Event may match ANY of the specified categories (OR).
+
+    Returns:
+        str: Raw calendar data (e.g., in JSON, XML, or ICS format) or an error message.
     """
+    
     # When feed_type is not one of these types, add the simple feed_type parameter.
     feed_type_param = ""
     if feed_type not in ['rss', 'js', 'ics', 'csv']:
         feed_type_param = "feed_type=simple"
     
     feed_type_url = feed_type_param if feed_type_param else ""
-    group_url = ""
-    category_url = ""
 
     if filter_method_group:
         if 'All' in groups:
             group_url = ""
         else:
+            group_url = ""
             for group in groups:
-                group_url += '&gfu[]='+quote(group, safe="")
+                group_url+='&gfu[]='+quote(group, safe="")
     else:
         if 'All' in groups:
             group_url = ""
@@ -38,57 +65,51 @@ def get_events_from_duke_api(feed_type="json", future_days=45, groups=['All'], c
         if 'All' in categories:
             category_url = ""
         else:
+            category_url = ""
             for category in categories:
                 category_url += '&cfu[]=' + quote(category, safe="")
     else:
         if 'All' in categories:
             category_url = ""
         else:
+            category_url = ""
             for category in categories:
                 category_url += "&cf[]=" + quote(category, safe="")
 
     url = f'https://calendar.duke.edu/events/index.{feed_type}?{category_url}{group_url}&future_days={future_days}&{feed_type_url}'
 
-    try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        
-        # Try to parse JSON response if feed_type is json
-        if feed_type == 'json':
-            return json.dumps(response.json())
+    response = requests.get(url)
+
+    if response.status_code == 200:
         return response.text
-    except requests.exceptions.RequestException as e:
-        return json.dumps({"error": f"Failed to fetch events data: {str(e)}"})
-    except json.JSONDecodeError:
-        return json.dumps({"error": "Failed to parse response as JSON"})
+    else:
+        return f"Failed to fetch data: {response.status_code}"
     
 
-def get_curriculum_with_subject_from_duke_api(subject):
+def get_curriculum_with_subject_from_duke_api(subject: str):
+
     """
-    Retrieve curriculum information from Duke University's API by specifying a subject code.
+
+    Retrieve curriculum information from Duke University's API by specifying a subject code, allowing you to access brief details about available courses.
+
+    Parameters:
+        subject (str): The subject to get curriculumn data for. For example, the subject is 'ARABIC-Arabic'.
+
+    Returns:
+        str: Raw curriculum data in JSON format or an error message. If valid result, the response will contain each course's course id and course offer number for further queries.
+        The value of course id is the value of 'crse_id' in the response, and the value of course offer number is the value of 'crse_offer_nbr' in the response.
     """
+
     subject_url = quote(subject, safe="")
 
-    # Updated with a more reliable access token, if the old one has expired
-    # You may need to replace this with a valid token
     url = f'https://streamer.oit.duke.edu/curriculum/courses/subject/{subject_url}?access_token=19d3636f71c152dd13840724a8a48074'
 
-    try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        
-        # Try to parse JSON response
-        return json.dumps(response.json())
-    except requests.exceptions.RequestException as e:
-        # Create a more useful error response
-        error_data = {
-            "error": f"Failed to fetch curriculum data: {str(e)}",
-            "status_code": response.status_code if hasattr(response, 'status_code') else None,
-            "url": url
-        }
-        return json.dumps(error_data)
-    except json.JSONDecodeError:
-        return json.dumps({"error": "Failed to parse response as JSON"})
+    response = requests.get(url)
+
+    if response.status_code == 200:
+        return response.text
+    else:
+        return f"Failed to fetch data: {response.status_code}"
     
 def get_detailed_course_information_from_duke_api(course_id: str, course_offer_number: str):
 
@@ -105,8 +126,7 @@ def get_detailed_course_information_from_duke_api(course_id: str, course_offer_n
 
     """
 
-    url = f'https://streamer.oit.duke.edu/curriculum/courses/crse_id/{course_id}/crse_offer_nbr/{course_offer_number}'
-
+    url = f'https://streamer.oit.duke.edu/curriculum/courses/crse_id/{course_id}/crse_offer_nbr/{course_offer_number}?access_token=19d3636f71c152dd13840724a8a48074'
     response = requests.get(url)
 
     if response.status_code == 200:
