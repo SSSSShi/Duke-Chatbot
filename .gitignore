@@ -1,3 +1,5 @@
 /__pycache__
 /chatbot
+/evaluation/__pycache__
+/dukebot/__pycache__
 .env
