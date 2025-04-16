@@ -27,9 +27,9 @@ def load_options_from_file(filename):
     
 # Try to load the valid options
 try:
-    valid_groups = load_options_from_file('groups.txt')
-    valid_categories = load_options_from_file('categories.txt')
-    valid_subjects = load_options_from_file('subjects.txt')
+    valid_groups = load_options_from_file('resources/groups.txt')
+    valid_categories = load_options_from_file('resources/categories.txt')
+    valid_subjects = load_options_from_file('resources/subjects.txt')
 except FileNotFoundError as e:
     print(f"Warning: Could not load options file: {e}")
     valid_groups = []
@@ -64,13 +64,13 @@ def load_valid_groups():
     """
     Load valid groups from the groups.txt file.
     """
-    return load_valid_values("groups.txt")
+    return load_valid_values("resources/groups.txt")
 
 def load_valid_categories():
     """
     Load valid categories from the categories.txt file.
     """
-    return load_valid_values("categories.txt")
+    return load_valid_values("resources/categories.txt")
 
 def llm_map_prompt_to_filters(prompt: str):
     """
