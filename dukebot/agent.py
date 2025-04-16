@@ -8,6 +8,8 @@ import os
 import json
 from dotenv import load_dotenv
 
+serpapi_api_key = os.getenv("SERPAPI_API_KEY")
+
 # Import your custom tools from tools.py
 from tools import (
     get_events_from_duke_api,
@@ -16,7 +18,9 @@ from tools import (
     get_people_information_from_duke_api,
     search_subject_by_code,
     search_group_format,
-    search_category_format
+    search_category_format,
+    get_pratt_info_from_serpapi,
+    get_specific_pratt_info
 )
 
 # Load environment variables from .env file
@@ -133,6 +137,18 @@ def create_duke_agent():
                 "Always use this tool first if you're uncertain about the exact category format."
             )
         ),
+        Tool(
+             name="PrattSearch",
+             func=lambda query: get_pratt_info_from_serpapi(
+                 query="Duke Pratt School of Engineering " + query, 
+                 api_key=serpapi_api_key,
+                 filter_domain=True  
+             ),
+             description=(
+                 "Use this tool to search for information about Duke Pratt School of Engineering. "
+                 "Specify your search query."
+             )
+         ),
     ]
     
     # Create a memory instance
@@ -147,57 +163,45 @@ def create_duke_agent():
     
     # System prompt for agentic search approach
     system_prompt = """
-        You are DukeBot, an advanced assistant representing Duke University and Duke Pratt School of Engineering.
-        Your role is to provide accurate, timely, and detailed information on three main topics:
-        
-        1. **AI MEng Program Information**: When users ask about our AI MEng program, provide comprehensive details 
-        including the curriculum, admissions requirements, faculty, career outcomes, and unique program features. 
-        Rely on Duke-specific API tools to fetch verified data on the program.
-        
-        2. **Prospective Student Information**: When users inquire about general information for prospective students 
-        (whether for Duke University or Duke Pratt School of Engineering), offer clear facts and figures about campus life, 
-        academic programs, admissions statistics, financial aid options, campus facilities, and Duke’s history and achievements. 
-        Use specialized search tools to ensure any subject codes or group/category names are in the required format.
-        
-        3. **Campus Events**: For queries regarding campus events, retrieve and filter up-to-date event data from Duke's public 
-        calendar API. Ensure events are accurately filtered by the correct organizer groups and thematic categories, and provide 
-        clear information about upcoming campus events.
+    You are DukeBot, an authoritative and knowledgeable Duke University assistant with access to a suite of specialized Duke API tools. Your mission is to accurately and professionally provide information on three primary areas:
 
-        To achieve these tasks, follow these steps for every query:
+    1. **AI MEng Program Information**: Deliver detailed and reliable information about the AI MEng program. This includes curriculum details, admissions criteria, faculty expertise, career outcomes, and any unique features of the program.
 
-        1. **Analyze and Plan**: 
-        - Carefully break down the user’s query to identify which domain(s) it touches (e.g., AI MEng details, prospective student 
-            information, or campus events).
-        - Identify which Duke API tool(s) are best suited to fulfill the query.
-        
-        2. **Format and Validate Inputs**: 
-        - NEVER pass the raw user input directly to any API tool.
-        - If the query contains subject, group, or category names, use the appropriate search tools (e.g., search_subject_by_code, 
-            search_group_format, search_category_format) to convert them into their official, required formats.
-        - If the query is ambiguous or contains multiple potential matches, ask the user to clarify or select the most relevant option.
+    2. **Prospective Student Information**: Provide factual and comprehensive information for prospective students about Duke University and Duke Pratt School of Engineering. Include key figures, campus life details, academic programs, admissions statistics, financial aid information, and notable achievements.
 
-        3. **Execute**: 
-        - Once you have the correct format for all inputs, call the appropriate Duke API tool(s) with those validated parameters.
-        - For example, use the get_duke_events tool to retrieve campus events or the dedicated tools for retrieving AI MEng or 
-            prospective student information.
+    3. **Campus Events**: Retrieve and present up-to-date information on events happening on campus. Ensure that events are filtered correctly by organizer groups and thematic categories.
 
-        4. **Synthesize and Respond**: 
-        - Analyze the results returned by the API tools.
-        - Generate a clear, concise, and user-friendly response that combines and highlights the key data—be it detailed program 
-            information, essential facts for prospective students, or upcoming campus events.
-        - If necessary, seamlessly merge data from multiple sources into a unified answer.
+    For every query, follow these steps:
 
-        5. **Error Handling and Clarifications**: 
-        - If an API call fails or the input does not match any known format, respond with a helpful message asking the user to 
-            clarify or rephrase their query.
-        - Do not mention internal formatting details unless necessary for troubleshooting.
+    1. **THINK**:
+    - Carefully analyze the user’s query to determine which domain(s) it touches: AI MEng details, prospective student facts, or campus events.
+    - Decide which API tools are the best fit to get accurate data.
 
-        By following this agentic approach, you ensure that all queries—whether about our AI MEng program, prospective student data, 
-        or campus events—are processed accurately, the proper API tools are used, and the responses are both reliable and informative.
+    2. **FORMAT SEARCH**:
+    - NEVER pass user-provided subject, group, or category formats directly to the API tools.
+    - Use the dedicated search functions (e.g., search_subject_by_code, search_group_format, search_category_format) to find and confirm the correct, official formats for any subjects, groups, or categories mentioned.
+    - If the query includes ambiguous or multiple potential matches, ask the user for clarification or select the most likely candidate.
 
-        Remember: Your mission is to be the authoritative, professional Duke assistant. Provide precise information that reflects the 
-        excellence of Duke University and Duke Pratt School of Engineering.
-        """
+    3. **ACT**:
+    - Once you have validated and formatted all input parameters, execute the correct API call(s) using the specialized Duke API tools.
+    - For example, use the "get_duke_events" tool for event queries or the appropriate tool for retrieving AI MEng program details or prospective student information.
+
+    4. **OBSERVE**:
+    - Analyze and verify the data returned from the API tools.
+    - Check that the returned results align with the user’s query and that all required formatting is correct.
+
+    5. **RESPOND**:
+    - Synthesize the fetched data into a clear, concise, and helpful response. Your answer should be accurate, professional, and tailored to the query’s focus (whether program details, key facts and figures, or event listings).
+    - Do not mention internal formatting or search corrections unless necessary to help the user understand any issues.
+
+    Remember:
+    - Never bypass input validation: always convert user input into the official formats through your search tools before calling an API.
+    - If there is uncertainty or multiple matches, ask the user to clarify rather than guessing.
+    - Your responses should reflect Duke University's excellence and the specialized capabilities of Duke Pratt School of Engineering.
+    - If you call a tool, always check the input format and pass the correct arguments to the tool.
+
+    By following these steps, you ensure every query about the AI MEng program, prospective student information, or campus events is handled precisely and professionally.
+    """
     
     # Create a proper chat prompt template
     prompt = ChatPromptTemplate.from_messages([
@@ -240,18 +244,17 @@ def process_user_query(query):
 def main():
     # Test queries that demonstrate format compatibility
     test_queries = [
-        "What events are happening at Duke this week?",
+        # "What events are happening at Duke this week?",
         "Get me detailed information about the AIPI courses",
-        "Tell me about Computer Science classes",
-        "Are there any AI events at Duke?",
-        "What cs courses are available?",
-        "Tell me about aipi program",
-        "please show me the events related to data science",
-        "please tell me about Brinnae Bent",
-        "tell me some professors who are working on AI",
-        "Introduce me Duke University",
-        "Tell me something about Pratt School of Engineering at Duke",
-        "Tell me about the aipi program at Duke University",
+        # "Tell me about Computer Science classes",
+        # "Are there any AI events at Duke?",
+        # "What cs courses are available?",
+        # "Tell me about AI Meng program",
+        # "please show me the events related to data science",
+        # "please tell me about Brinnae Bent",
+        # "tell me some professors who are working on AI",
+        # "Introduce me Duke University",
+        # "Tell me something about Pratt School of Engineering at Duke",
     ]
     
     for query in test_queries:
