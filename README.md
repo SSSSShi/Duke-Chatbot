@@ -11,8 +11,10 @@ A Duke Chatbot project built with LangChain that integrates with Duke University
 - Curriculum & Course Info: Fetch curriculum data and detailed course information by subject or course IDs.
 - People Information: Retrieve information about Duke personnel from the Duke API.
 - Advanced Query Handling: Leverages fuzzy matching and search tools for accurate subject, group, and category formatting.
+- Agentic LLM Reasoning: Uses a LangChain agent with planning and tool orchestration for complex, multi-step queries.
 - SerpAPI Integration: Uses SerpAPI to obtain Duke Pratt School of Engineering related details.
 - Conversational Memory: Maintains conversation context using LangChain’s memory modules.
+- Web UI: User-friendly Streamlit frontend.
 
 ### Installation and Run
 
@@ -49,3 +51,13 @@ Duke Chatbot Project/
 │    ├── categories.txt     
 │    └── subjects.txt    
 
+Usage
+Access the chatbot at http://35.226.168.195:8501/
+
+Deployment
+Pipeline implemented here because of repo constraints: https://github.com/harshitha-ras/duke_chatbot
+Deployment is automated via GitHub Actions. On each push to main, the following occurs:
+
+Code is deployed to your GCP VM using SSH and a deployment script (deploy.sh)
+
+The script pulls the latest code, installs dependencies, and restarts backend/frontend services
