@@ -9,8 +9,7 @@ from dotenv import load_dotenv
 serpapi_api_key = os.getenv("SERPAPI_API_KEY")
 
 # Import your custom tools from tools.py
-from dukebot.tools import (
-    get_events_from_duke_api,
+from tools import (
     get_curriculum_with_subject_from_duke_api,
     get_events_from_duke_api_single_input,
     get_course_details_single_input,
