@@ -45,7 +45,7 @@ Duke Chatbot Project/
 │   ├── __init__.py    
 │   └── eval.py    
 └── resources/     
-    ├── groups.txt   
-    ├── categories.txt     
-    └── subjects.txt    
+│    ├── groups.txt   
+│    ├── categories.txt     
+│    └── subjects.txt    
 
