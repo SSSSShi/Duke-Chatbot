@@ -1,0 +1,352 @@
+# DukeBot Secure Development Environment
+# Docker Compose configuration for local development and testing
+
+version: '3.8'
+
+services:
+  # Main DukeBot application
+  dukebot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USER_ID: 1000
+        GROUP_ID: 1000
+    container_name: dukebot-secure-app
+    ports:
+      - "8501:8501"
+    environment:
+      - STAGE=development
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+      - RATE_LIMIT_REQUESTS=20
+      - SESSION_TIMEOUT=3600
+      - DATA_RETENTION_DAYS=7
+      - PRIVACY_MODE=strict
+      - AUDIT_LOG_ENABLED=true
+      - HTTPS_ONLY=false
+    env_file:
+      - .env
+    volumes:
+      # Mount logs and data for persistence
+      - ./logs:/home/dukebot/app/logs
+      - ./data:/home/dukebot/app/data
+      # Mount source code for development (comment out for production)
+      - .:/home/dukebot/app:ro
+    networks:
+      - dukebot-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      - redis
+      - postgres
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # Redis for caching and session storage
+  redis:
+    image: redis:7-alpine
+    container_name: dukebot-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./config/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - dukebot-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.1'
+
+  # PostgreSQL for audit logs and user data
+  postgres:
+    image: postgres:15-alpine
+    container_name: dukebot-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: dukebot
+      POSTGRES_USER: dukebot_user
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-secure_password_change_me}
+      POSTGRES_INITDB_ARGS: "--auth-host=md5"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - dukebot-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dukebot_user -d dukebot"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.2'
+
+  # Nginx reverse proxy with SSL termination
+  nginx:
+    image: nginx:alpine
+    container_name: dukebot-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config/ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
+    networks:
+      - dukebot-network
+    restart: unless-stopped
+    depends_on:
+      - dukebot
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus for monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: dukebot-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - dukebot-network
+    restart: unless-stopped
+
+  # Grafana for dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: dukebot-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./config/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    networks:
+      - dukebot-network
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  # Elasticsearch for log aggregation
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: dukebot-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - dukebot-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Kibana for log visualization
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: dukebot-kibana
+    ports:
+      - "5601:5601"
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    networks:
+      - dukebot-network
+    restart: unless-stopped
+    depends_on:
+      - elasticsearch
+
+  # Filebeat for log shipping
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.11.0
+    container_name: dukebot-filebeat
+    user: root
+    volumes:
+      - ./config/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./logs:/logs:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - dukebot-network
+    restart: unless-stopped
+    depends_on:
+      - elasticsearch
+
+  # Security scanner
+  security-scanner:
+    image: owasp/zap2docker-stable
+    container_name: dukebot-security-scanner
+    volumes:
+      - ./security-reports:/zap/wrk:rw
+    networks:
+      - dukebot-network
+    profiles:
+      - security-testing
+    command: zap-baseline.py -t http://dukebot:8501 -r security-report.html
+
+# Networks
+networks:
+  dukebot-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# Volumes for data persistence
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  elasticsearch_data:
+    driver: local
+
+# Additional configurations for different environments
+# Development override
+---
+# docker-compose.override.yml (for development)
+version: '3.8'
+
+services:
+  dukebot:
+    build:
+      context: .
+      target: development
+    volumes:
+      # Mount source code for hot reloading
+      - .:/home/dukebot/app
+    environment:
+      - PYTHONPATH=/home/dukebot/app
+      - STREAMLIT_SERVER_FILE_WATCHER_TYPE=poll
+    command: >
+      sh -c "
+        pip install watchdog &&
+        streamlit run secure_ui.py 
+          --server.port=8501 
+          --server.address=0.0.0.0 
+          --server.fileWatcherType=poll
+          --server.runOnSave=true
+      "
+
+# Production configuration
+---
+# docker-compose.prod.yml (for production)
+version: '3.8'
+
+services:
+  dukebot:
+    build:
+      context: .
+      target: production
+    environment:
+      - STAGE=production
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      - RATE_LIMIT_REQUESTS=10
+      - SESSION_TIMEOUT=1800
+      - DATA_RETENTION_DAYS=30
+      - HTTPS_ONLY=true
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  nginx:
+    volumes:
+      - ./config/nginx-prod.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+
+# Testing configuration
+---
+# docker-compose.test.yml (for testing)
+version: '3.8'
+
+services:
+  dukebot-test:
+    build:
+      context: .
+      target: builder
+    environment:
+      - STAGE=testing
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+      - ENCRYPTION_KEY=7HNgo-NaCtCsyBebeWi13wAz2eh7JRMYUdcbRLe-8SA=
+      - SERPAPI_API_KEY=9339dbe03e129628964af59694c4709f334ee7bf84e7c0c1e335cbc9ea0bbaf6
+    volumes:
+      - .:/home/dukebot/app
+    command: >
+      sh -c "
+        pip install pytest pytest-cov pytest-xdist &&
+        pytest tests/ -v --cov=. --cov-report=html --cov-report=xml
+      "
+    networks:
+      - dukebot-network
+
+  test-database:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: dukebot_test
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+    networks:
+      - dukebot-network
